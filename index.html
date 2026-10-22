@@ -34,7 +34,7 @@ video{width:120px;border-radius:8px;transform:scaleX(-1);background:#000}
 
 <section id="home">
   <div class="card">
-    <p>Open this same page on two devices (signed in to claude.ai). One is the <b>TV / Display</b> (shows the avatar), the other is the <b>Phone / Tracker</b> (uses its camera).</p>
+    <p>Open this same page on two devices (any network). One is the <b>TV / Display</b> (shows the avatar), the other is the <b>Phone / Tracker</b> (uses its camera).</p>
     <button class="big" id="bTV">📺 TV / Display</button>
     <button class="big" id="bPhone">📱 Phone / Tracker</button>
   </div>
@@ -64,16 +64,11 @@ video{width:120px;border-radius:8px;transform:scaleX(-1);background:#000}
   </div>
 </section>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const show=id=>['home','tv','phone'].forEach(s=>$(s).hidden=s!==id);
-let room=null;
-async function getRoom(code){
-  const r=await claude.use('room');
-  if(!r)throw new Error('Live link is not available here. Open the page from your claude.ai artifact link while signed in.');
-  return r.join('tv-'+code);
-}
 $('bTV').onclick=startTV;$('bPhone').onclick=()=>show('phone');
 
 /* ================= TV / DISPLAY ================= */
@@ -81,18 +76,23 @@ let pose=null,asp=0.75,frames=0,rtt=0,tvRoom=null,lastPose=0;
 const cv=$('cv'),c=cv.getContext('2d'),W=800,H=600;
 let base=null,punches=0,jumps=0,armOut=[false,false],inAir=false;
 
+let tvConn=null;
 async function startTV(){
   show('tv');
   const code=String(Math.floor(1000+Math.random()*9000));
   $('code').textContent=code;
-  try{tvRoom=await getRoom(code);}catch(e){$('status').textContent=e.message;return;}
-  tvRoom.on('pose',m=>{
-    if(m.isMe||!m.data)return;
-    pose=m.data.p;asp=m.data.a||asp;frames++;
-    $('pair').hidden=true;detect();
+  const peer=new Peer('bodytv-'+code);
+  peer.on('error',e=>{$('status').textContent='Connection error: '+e.type;});
+  peer.on('connection',conn=>{
+    tvConn=conn;
+    conn.on('open',()=>{$('status').textContent='Phone connected ✓';});
+    conn.on('data',d=>{
+      if(d.pong!==undefined){rtt=(performance.now()-d.pong)/2;}
+      else if(d.p){pose=d.p;asp=d.a||asp;frames++;$('pair').hidden=true;detect();}
+    });
+    conn.on('close',()=>{$('pair').hidden=false;$('status').textContent='Phone disconnected';});
   });
-  tvRoom.on('pong',m=>{if(!m.isMe&&m.data)rtt=(Date.now()-m.data.t)/2;});
-  setInterval(()=>tvRoom.emit('ping',{t:Date.now()}),1000);
+  setInterval(()=>{if(tvConn&&tvConn.open)tvConn.send({ping:performance.now()});},1000);
 }
 setInterval(()=>{
   $('sFps').textContent='FPS: '+frames;frames=0;
@@ -161,9 +161,16 @@ $('go').onclick=async()=>{
     ps.textContent='Requesting camera…';
     const st=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'},audio:false});
     video.srcObject=st;await video.play();
-  }catch(e){ps.textContent='Camera error: '+(e.message||e.name);return;}
-  try{room=await getRoom(code);}catch(e){ps.textContent=e.message;return;}
-  room.on('ping',m=>{if(!m.isMe&&m.data){room.emit('pong',m.data);ps.textContent='Connected to TV ✓ — tracking and sending.';}});
+  }catch(e){ps.textContent='Camera error: '+(e.message||e.name)+' (camera needs https)';return;}
+  ps.textContent='Connecting to TV…';
+  const peer=new Peer();
+  peer.on('error',e=>{ps.textContent='Connection error: '+e.type+' (check the code)';});
+  const conn=await new Promise(res=>peer.on('open',()=>{
+    const c=peer.connect('bodytv-'+code,{reliable:false,serialization:'json'});
+    c.on('open',()=>res(c));
+  }));
+  conn.on('data',d=>{if(d.ping!==undefined)conn.send({pong:d.ping});});
+  conn.on('close',()=>{ps.textContent='Disconnected from TV.';});
   ps.textContent='Loading tracking model…';
   let last=0;
   try{
@@ -171,12 +178,12 @@ $('go').onclick=async()=>{
     tracker.setOptions({modelComplexity:0,smoothLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
     tracker.onResults(r=>{
       const now=performance.now();
-      if(!r.poseLandmarks||now-last<40)return;last=now;
-      room.emit('pose',{a:+(video.videoWidth/video.videoHeight).toFixed(3),
+      if(!r.poseLandmarks||!conn.open||now-last<33)return;last=now;
+      conn.send({a:+(video.videoWidth/video.videoHeight).toFixed(3),
         p:r.poseLandmarks.map(l=>[+l.x.toFixed(3),+l.y.toFixed(3),+(l.visibility||0).toFixed(2)])});
     });
     await tracker.initialize();
-    ps.textContent='Tracking… waiting for TV.';
+    ps.textContent='Connected ✓ — tracking and sending.';
     const loop=async()=>{try{await tracker.send({image:video});}catch(e){}requestAnimationFrame(loop);};loop();
   }catch(e){ps.textContent='Could not load model: '+(e.message||e);}
 };

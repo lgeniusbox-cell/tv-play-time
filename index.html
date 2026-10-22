@@ -1,1 +1,195 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mirror Avatar</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f4f5f8;--card:#fff;--text:#1b1d24;--muted:#667;--accent:#6c5ce7;--stage:#e9ecf5}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14151b;--card:#1d1f28;--text:#eef0f6;--muted:#9aa0b4;--stage:#232634}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#14151b;--card:#1d1f28;--text:#eef0f6;--muted:#9aa0b4;--stage:#232634}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px}
+h1{font-size:1.3rem;margin:0 0 4px}
+p.sub{margin:0 0 14px;color:var(--muted);font-size:.9rem}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-size:.95rem;cursor:pointer}
+button.ghost{background:var(--card);color:var(--text);border:1px solid var(--muted)}
+label{font-size:.85rem;color:var(--muted);display:flex;gap:6px;align-items:center}
+#status{font-size:.85rem;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:720px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border-radius:14px;padding:10px}
+.panel h2{font-size:.8rem;margin:2px 4px 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stage{position:relative;aspect-ratio:4/3;background:var(--stage);border-radius:10px;overflow:hidden}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+video{transform:scaleX(-1);object-fit:cover}
+</style>
+</head>
+<body>
+<h1>Mirror Avatar</h1>
+<p class="sub">Allow the camera and step back so your upper body and hands are visible. The avatar copies your body, hands and face.</p>
+<div class="bar">
+  <button id="start">Start camera</button>
+  <label>Avatar color <input type="color" id="color" value="#6c5ce7"></label>
+  <label><input type="checkbox" id="skel" checked> Skeleton on camera</label>
+  <button class="ghost" id="mirror">Flip mirror</button>
+  <span id="status">Camera is off.</span>
+</div>
+<div class="grid">
+  <div class="panel"><h2>Camera</h2>
+    <div class="stage"><video id="video" playsinline muted></video><canvas id="overlay" width="640" height="480"></canvas></div></div>
+  <div class="panel"><h2>Avatar</h2>
+    <div class="stage"><canvas id="avatar" width="640" height="480"></canvas></div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js"></script>
+<script>
+const W=640,H=480;
+const $=id=>document.getElementById(id);
+const video=$('video'),ov=$('overlay').getContext('2d'),av=$('avatar').getContext('2d');
+const statusEl=$('status');
+let mirrored=true,running=false;
+$('mirror').onclick=()=>{mirrored=!mirrored;video.style.transform=mirrored?'scaleX(-1)':'none';};
+
+const P=l=>({x:(mirrored?1-l.x:l.x)*W,y:l.y*H});
+const ok=l=>l&&(l.visibility===undefined||l.visibility>0.4);
+const FINGERS=[[0,1,2,3,4],[0,5,6,7,8],[0,9,10,11,12],[0,13,14,15,16],[0,17,18,19,20]];
+
+function line(c,pts,w,col){
+  c.strokeStyle=col;c.lineWidth=w;c.lineCap='round';c.lineJoin='round';
+  c.beginPath();pts.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();
+}
+function limb(c,pose,ids,w,col){
+  const ls=ids.map(i=>pose[i]);
+  if(ls.every(ok)) line(c,ls.map(P),w,col);
+}
+function shade(hex,amt){
+  const n=parseInt(hex.slice(1),16);
+  const f=v=>Math.max(0,Math.min(255,v+amt));
+  return `rgb(${f(n>>16)},${f((n>>8)&255)},${f(n&255)})`;
+}
+
+function drawHand(c,hand,wrist,col,scale){
+  if(hand){
+    FINGERS.forEach(f=>line(c,f.map(i=>P(hand[i])),scale*0.9,col));
+    const pts=[0,5,9,13,17].map(i=>P(hand[i]));
+    c.fillStyle=col;c.beginPath();pts.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.closePath();c.fill();
+  }else if(wrist&&ok(wrist)){
+    const p=P(wrist);c.fillStyle=col;c.beginPath();c.arc(p.x,p.y,scale*1.1,0,7);c.fill();
+  }
+}
+
+function drawAvatar(r){
+  const c=av,base=$('color').value,dark=shade(base,-45),light=shade(base,40);
+  c.clearRect(0,0,W,H);
+  const g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(120,130,200,.12)');g.addColorStop(1,'rgba(120,130,200,0)');
+  c.fillStyle=g;c.fillRect(0,0,W,H);
+  const pose=r.poseLandmarks;
+  if(!pose){c.fillStyle='#8a90a8';c.font='20px system-ui';c.textAlign='center';c.fillText('Step into the camera view…',W/2,H/2);return;}
+  const sh=[pose[11],pose[12]],hp=[pose[23],pose[24]];
+  const shW=Math.hypot(P(pose[11]).x-P(pose[12]).x,P(pose[11]).y-P(pose[12]).y);
+  const lw=Math.max(14,shW*0.2);
+
+  // legs
+  limb(c,pose,[23,25,27],lw*1.1,dark);limb(c,pose,[24,26,28],lw*1.1,dark);
+  // torso
+  if(sh.every(ok)){
+    const hipsOk=hp.every(ok);
+    const s1=P(pose[11]),s2=P(pose[12]);
+    const h1=hipsOk?P(pose[23]):{x:s1.x,y:s1.y+shW*1.3},h2=hipsOk?P(pose[24]):{x:s2.x,y:s2.y+shW*1.3};
+    c.fillStyle=base;c.strokeStyle=base;c.lineWidth=lw*0.8;c.lineJoin='round';
+    c.beginPath();c.moveTo(s1.x,s1.y);c.lineTo(s2.x,s2.y);c.lineTo(h2.x,h2.y);c.lineTo(h1.x,h1.y);c.closePath();c.fill();c.stroke();
+  }
+  // arms
+  limb(c,pose,[11,13,15],lw*0.8,light);limb(c,pose,[12,14,16],lw*0.8,light);
+  // hands (person's left hand = pose 15)
+  const skin='#ffd2a8';
+  drawHand(c,r.leftHandLandmarks,pose[15],skin,lw*0.35);
+  drawHand(c,r.rightHandLandmarks,pose[16],skin,lw*0.35);
+
+  // head
+  if(ok(pose[7])&&ok(pose[8])){
+    const a=P(pose[7]),b=P(pose[8]);
+    const cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
+    const ang=Math.atan2(b.y-a.y,b.x-a.x);
+    const rad=Math.max(28,Math.hypot(b.x-a.x,b.y-a.y)*0.75);
+    // neck
+    if(sh.every(ok)){const m={x:(P(pose[11]).x+P(pose[12]).x)/2,y:(P(pose[11]).y+P(pose[12]).y)/2};line(c,[m,{x:cx,y:cy}],lw*0.6,skin);}
+    c.save();c.translate(cx,cy);c.rotate(ang);
+    c.fillStyle=skin;c.beginPath();c.arc(0,0,rad,0,7);c.fill();
+    c.fillStyle=dark;c.beginPath();c.arc(0,-rad*0.15,rad*1.04,Math.PI,2*Math.PI);c.fill(); // hair
+    // eyes
+    let open=0.04;
+    const f=r.faceLandmarks;
+    if(f){const mh=Math.hypot(f[13].x-f[14].x,f[13].y-f[14].y),fh=Math.hypot(f[10].x-f[152].x,f[10].y-f[152].y);open=Math.min(1,mh/fh*7);}
+    c.fillStyle='#fff';
+    [-1,1].forEach(s=>{c.beginPath();c.ellipse(s*rad*0.38,-rad*0.05,rad*0.2,rad*0.24,0,0,7);c.fill();});
+    let px=0,py=0;
+    if(pose[0]&&ok(pose[0])){const n=P(pose[0]);px=Math.max(-1,Math.min(1,(n.x-cx)/rad))*rad*0.07;}
+    c.fillStyle='#222';
+    [-1,1].forEach(s=>{c.beginPath();c.arc(s*rad*0.38+px,-rad*0.05+py,rad*0.1,0,7);c.fill();});
+    // mouth
+    c.fillStyle='#7a2230';c.beginPath();c.ellipse(0,rad*0.48,rad*0.26,rad*(0.04+open*0.32),0,0,7);c.fill();
+    // cheeks
+    c.fillStyle='rgba(255,120,120,.35)';[-1,1].forEach(s=>{c.beginPath();c.arc(s*rad*0.62,rad*0.3,rad*0.12,0,7);c.fill();});
+    c.restore();
+  }
+}
+
+function drawOverlay(r){
+  ov.clearRect(0,0,W,H);
+  if(!$('skel').checked) return;
+  const pose=r.poseLandmarks;
+  if(pose){
+    [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]].forEach(([a,b])=>{
+      if(ok(pose[a])&&ok(pose[b])) line(ov,[P(pose[a]),P(pose[b])],3,'#00e5a0');
+    });
+    pose.forEach((l,i)=>{if(i>10&&ok(l)){const p=P(l);ov.fillStyle='#fff';ov.beginPath();ov.arc(p.x,p.y,3,0,7);ov.fill();}});
+  }
+  [r.leftHandLandmarks,r.rightHandLandmarks].forEach(h=>{
+    if(!h)return;
+    FINGERS.forEach(f=>line(ov,f.map(i=>P(h[i])),2,'#ffb020'));
+    h.forEach(l=>{const p=P(l);ov.fillStyle='#ff5470';ov.beginPath();ov.arc(p.x,p.y,2.5,0,7);ov.fill();});
+  });
+  if(r.faceLandmarks){ov.fillStyle='rgba(90,170,255,.7)';r.faceLandmarks.forEach((l,i)=>{if(i%6)return;const p=P(l);ov.fillRect(p.x,p.y,1.6,1.6);});}
+}
+
+let holistic;
+function onResults(r){drawOverlay(r);drawAvatar(r);}
+
+async function start(){
+  const btn=$('start');
+  btn.disabled=true;statusEl.textContent='Requesting camera…';
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'},audio:false});
+    video.srcObject=stream;await video.play();
+  }catch(e){
+    statusEl.textContent='Camera blocked or unavailable: '+(e.message||e.name)+'. Allow camera access and try again.';
+    btn.disabled=false;return;
+  }
+  statusEl.textContent='Loading tracking model (first time takes a few seconds)…';
+  try{
+    holistic=new Holistic({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/'+f});
+    holistic.setOptions({modelComplexity:1,smoothLandmarks:true,refineFaceLandmarks:false,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+    holistic.onResults(r=>{if(!running){running=true;statusEl.textContent='Tracking live.';}onResults(r);});
+    await holistic.initialize();
+  }catch(e){
+    statusEl.textContent='Could not load the tracking model: '+(e.message||e)+'. If this page is embedded, try opening the downloaded file locally.';
+    btn.disabled=false;return;
+  }
+  btn.textContent='Camera on';
+  const loop=async()=>{
+    if(video.readyState>=2){try{await holistic.send({image:video});}catch(e){}}
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+$('start').onclick=start;
+drawAvatar({});
+</script>
+</body>
+</html>

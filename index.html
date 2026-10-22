@@ -34,7 +34,7 @@ video{width:120px;border-radius:8px;transform:scaleX(-1);background:#000}
 
 <section id="home">
   <div class="card">
-    <p>Open this same page on two devices on the same Wi‑Fi. One is the <b>TV / Display</b> (shows the avatar), the other is the <b>Phone / Tracker</b> (uses its camera).</p>
+    <p>Open this same page on two devices (signed in to claude.ai). One is the <b>TV / Display</b> (shows the avatar), the other is the <b>Phone / Tracker</b> (uses its camera).</p>
     <button class="big" id="bTV">📺 TV / Display</button>
     <button class="big" id="bPhone">📱 Phone / Tracker</button>
   </div>
@@ -42,12 +42,9 @@ video{width:120px;border-radius:8px;transform:scaleX(-1);background:#000}
 
 <section id="tv" hidden>
   <div class="card" id="pair">
-    <p><b>1.</b> Copy this code to the phone (message it to yourself, or paste it in a note):</p>
-    <textarea id="offer" readonly placeholder="Generating code…"></textarea>
-    <button class="ghost" id="copyOffer">Copy code</button>
-    <p><b>2.</b> Paste the phone’s reply code here:</p>
-    <textarea id="answer" placeholder="Paste answer code"></textarea>
-    <button id="connect">Connect</button> <span id="status">Waiting…</span>
+    <p>On the phone, open this page, tap <b>Phone / Tracker</b> and type this code:</p>
+    <div id="code" style="font-size:3rem;font-weight:700;letter-spacing:.3em;color:var(--accent)">----</div>
+    <span id="status">Waiting for phone…</span>
   </div>
   <div class="hud">
     <span class="pill" id="sFps">FPS: –</span><span class="pill" id="sLat">Latency: –</span>
@@ -59,13 +56,10 @@ video{width:120px;border-radius:8px;transform:scaleX(-1);background:#000}
 
 <section id="phone" hidden>
   <div class="card">
-    <p><b>1.</b> Paste the code shown on the TV page:</p>
-    <textarea id="offerIn" placeholder="Paste code from TV"></textarea>
-    <button id="mkAnswer">Start camera &amp; create reply</button>
+    <p>Type the 4-digit code shown on the TV page:</p>
+    <input id="codeIn" inputmode="numeric" maxlength="4" placeholder="1234" style="font-size:2rem;width:7em;text-align:center;letter-spacing:.2em;padding:8px;border-radius:10px;border:1px solid var(--muted);background:var(--stage);color:var(--text)">
+    <br><button id="go">Start camera &amp; connect</button>
     <p id="pstatus"></p>
-    <p><b>2.</b> Copy the reply code and paste it on the TV page:</p>
-    <textarea id="answerOut" readonly></textarea>
-    <button class="ghost" id="copyAns">Copy reply</button>
     <video id="video" playsinline muted></video>
   </div>
 </section>
@@ -74,45 +68,35 @@ video{width:120px;border-radius:8px;transform:scaleX(-1);background:#000}
 <script>
 const $=id=>document.getElementById(id);
 const show=id=>['home','tv','phone'].forEach(s=>$(s).hidden=s!==id);
-const enc=d=>btoa(JSON.stringify(d)),dec=s=>JSON.parse(atob(s.trim()));
-async function gathered(pc){
-  if(pc.iceGatheringState==='complete')return;
-  await new Promise(res=>{const t=setTimeout(res,3500);
-    pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(t);res();}});});
+let room=null;
+async function getRoom(code){
+  const r=await claude.use('room');
+  if(!r)throw new Error('Live link is not available here. Open the page from your claude.ai artifact link while signed in.');
+  return r.join('tv-'+code);
 }
-function copy(ta,btn){ta.select();try{navigator.clipboard.writeText(ta.value);}catch(e){document.execCommand('copy');}btn.textContent='Copied ✓';}
 $('bTV').onclick=startTV;$('bPhone').onclick=()=>show('phone');
-$('copyOffer').onclick=e=>copy($('offer'),e.target);
-$('copyAns').onclick=e=>copy($('answerOut'),e.target);
 
 /* ================= TV / DISPLAY ================= */
-let pc,dc,pose=null,asp=0.75,frames=0,rtt=0;
+let pose=null,asp=0.75,frames=0,rtt=0,tvRoom=null,lastPose=0;
 const cv=$('cv'),c=cv.getContext('2d'),W=800,H=600;
 let base=null,punches=0,jumps=0,armOut=[false,false],inAir=false;
 
 async function startTV(){
   show('tv');
-  pc=new RTCPeerConnection({iceServers:[]});
-  dc=pc.createDataChannel('pose',{ordered:false,maxRetransmits:0});
-  dc.onopen=()=>{$('status').textContent='Connected ✓';$('pair').hidden=true;};
-  dc.onclose=()=>{$('status').textContent='Disconnected';$('pair').hidden=false;};
-  dc.onmessage=e=>{
-    const m=JSON.parse(e.data);
-    if(m.pong!==undefined){rtt=(performance.now()-m.pong)/2;}
-    else if(m.p){pose=m.p;asp=m.a||asp;frames++;detect();}
-  };
-  await pc.setLocalDescription(await pc.createOffer());
-  await gathered(pc);
-  $('offer').value=enc(pc.localDescription);
+  const code=String(Math.floor(1000+Math.random()*9000));
+  $('code').textContent=code;
+  try{tvRoom=await getRoom(code);}catch(e){$('status').textContent=e.message;return;}
+  tvRoom.on('pose',m=>{
+    if(m.isMe||!m.data)return;
+    pose=m.data.p;asp=m.data.a||asp;frames++;
+    $('pair').hidden=true;detect();
+  });
+  tvRoom.on('pong',m=>{if(!m.isMe&&m.data)rtt=(Date.now()-m.data.t)/2;});
+  setInterval(()=>tvRoom.emit('ping',{t:Date.now()}),1000);
 }
-$('connect').onclick=async()=>{
-  try{await pc.setRemoteDescription(dec($('answer').value));$('status').textContent='Connecting…';}
-  catch(e){$('status').textContent='Invalid code';}
-};
 setInterval(()=>{
   $('sFps').textContent='FPS: '+frames;frames=0;
   $('sLat').textContent='Latency: '+(rtt?rtt.toFixed(0)+' ms':'–');
-  if(dc&&dc.readyState==='open')dc.send(JSON.stringify({ping:performance.now()}));
 },1000);
 
 // pixel mapping, mirrored, keeps phone aspect ratio
@@ -169,39 +153,32 @@ function draw(){
 draw();
 
 /* ================= PHONE / TRACKER ================= */
-$('mkAnswer').onclick=async()=>{
-  const ps=$('pstatus');
-  let offer;try{offer=dec($('offerIn').value);}catch(e){ps.textContent='Invalid TV code.';return;}
+$('go').onclick=async()=>{
+  const ps=$('pstatus'),code=$('codeIn').value.trim();
+  if(!/^\d{4}$/.test(code)){ps.textContent='Enter the 4-digit code from the TV.';return;}
   const video=$('video');
   try{
     ps.textContent='Requesting camera…';
     const st=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'},audio:false});
     video.srcObject=st;await video.play();
   }catch(e){ps.textContent='Camera error: '+(e.message||e.name);return;}
+  try{room=await getRoom(code);}catch(e){ps.textContent=e.message;return;}
+  room.on('ping',m=>{if(!m.isMe&&m.data){room.emit('pong',m.data);ps.textContent='Connected to TV ✓ — tracking and sending.';}});
   ps.textContent='Loading tracking model…';
-  let tracker;
+  let last=0;
   try{
-    tracker=new Pose({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/'+f});
+    const tracker=new Pose({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/'+f});
     tracker.setOptions({modelComplexity:0,smoothLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
     tracker.onResults(r=>{
-      if(!r.poseLandmarks||!dc||dc.readyState!=='open'||dc.bufferedAmount>16000)return;
-      dc.send(JSON.stringify({a:video.videoWidth/video.videoHeight,
-        p:r.poseLandmarks.map(l=>[+l.x.toFixed(3),+l.y.toFixed(3),+(l.visibility||0).toFixed(2)])}));
+      const now=performance.now();
+      if(!r.poseLandmarks||now-last<40)return;last=now;
+      room.emit('pose',{a:+(video.videoWidth/video.videoHeight).toFixed(3),
+        p:r.poseLandmarks.map(l=>[+l.x.toFixed(3),+l.y.toFixed(3),+(l.visibility||0).toFixed(2)])});
     });
     await tracker.initialize();
-  }catch(e){ps.textContent='Could not load model: '+(e.message||e);return;}
-  const p=new RTCPeerConnection({iceServers:[]});pc=p;
-  p.ondatachannel=e=>{
-    dc=e.channel;
-    dc.onmessage=m=>{const d=JSON.parse(m.data);if(d.ping!==undefined)dc.send(JSON.stringify({pong:d.ping}));};
-    dc.onopen=()=>{ps.textContent='Connected ✓ — tracking and sending.';
-      const loop=async()=>{if(dc.readyState!=='open')return;try{await tracker.send({image:video});}catch(e){}requestAnimationFrame(loop);};loop();};
-  };
-  await p.setRemoteDescription(offer);
-  await p.setLocalDescription(await p.createAnswer());
-  await gathered(p);
-  $('answerOut').value=enc(p.localDescription);
-  ps.textContent='Model ready. Copy the reply code to the TV page.';
+    ps.textContent='Tracking… waiting for TV.';
+    const loop=async()=>{try{await tracker.send({image:video});}catch(e){}requestAnimationFrame(loop);};loop();
+  }catch(e){ps.textContent='Could not load model: '+(e.message||e);}
 };
 </script>
 </body>

@@ -1,0 +1,6 @@
+{
+  "name": "FloorMat Studio TV",
+  "description": "Video-reactive game engine for body-controlled floor mat games on Android TV with Gamepad API input.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

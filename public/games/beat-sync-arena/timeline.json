@@ -1,0 +1,26 @@
+{
+  "songTitle": "Synaptic Surge",
+  "bpm": 130,
+  "events": [
+    { "id": 1, "timeMs": 2000, "action": "CENTER", "lane": 1, "prompt": "STAND CENTER" },
+    { "id": 2, "timeMs": 3500, "action": "LEFT", "lane": 0, "prompt": "STEP LEFT" },
+    { "id": 3, "timeMs": 5000, "action": "CENTER", "lane": 1, "prompt": "STEP CENTER" },
+    { "id": 4, "timeMs": 6500, "action": "RIGHT", "lane": 2, "prompt": "STEP RIGHT" },
+    { "id": 5, "timeMs": 8000, "action": "CENTER", "lane": 1, "prompt": "STEP CENTER" },
+    { "id": 6, "timeMs": 9500, "action": "JUMP", "lane": 1, "prompt": "JUMP!" },
+    { "id": 7, "timeMs": 11500, "action": "SLIDE", "lane": 1, "prompt": "DUCK / SLIDE!" },
+    { "id": 8, "timeMs": 13000, "action": "LEFT", "lane": 0, "prompt": "LEFT LANE" },
+    { "id": 9, "timeMs": 14500, "action": "JUMP", "lane": 0, "prompt": "LEFT JUMP!" },
+    { "id": 10, "timeMs": 16000, "action": "CENTER", "lane": 1, "prompt": "CENTER" },
+    { "id": 11, "timeMs": 17500, "action": "RIGHT", "lane": 2, "prompt": "RIGHT LANE" },
+    { "id": 12, "timeMs": 19000, "action": "SLIDE", "lane": 2, "prompt": "RIGHT SLIDE!" },
+    { "id": 13, "timeMs": 21000, "action": "CENTER", "lane": 1, "prompt": "CENTER" },
+    { "id": 14, "timeMs": 22500, "action": "JUMP", "lane": 1, "prompt": "DOUBLE JUMP 1/2" },
+    { "id": 15, "timeMs": 23500, "action": "JUMP", "lane": 1, "prompt": "DOUBLE JUMP 2/2" },
+    { "id": 16, "timeMs": 25500, "action": "SLIDE", "lane": 1, "prompt": "SUPER SLIDE!" },
+    { "id": 17, "timeMs": 27500, "action": "LEFT", "lane": 0, "prompt": "DODGE LEFT" },
+    { "id": 18, "timeMs": 29000, "action": "RIGHT", "lane": 2, "prompt": "SWITCH RIGHT" },
+    { "id": 19, "timeMs": 31000, "action": "CENTER", "lane": 1, "prompt": "RECOVER CENTER" },
+    { "id": 20, "timeMs": 33000, "action": "JUMP", "lane": 1, "prompt": "FINAL JUMP!" }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "neon-velocity",
+  "title": "Neon Velocity: Highway Run",
+  "mode": "speed",
+  "version": "1.0.0",
+  "videoUrl": "procedural://cyber_highway",
+  "speedRange": [0.5, 2.5],
+  "baseSpeed": 1.0,
+  "difficulty": 1.0,
+  "spawnRate": 1.4,
+  "laneCount": 3,
+  "targetDistance": 2000,
+  "obstacles": [
+    { "type": "hurdle", "action": "jump", "width": 0.8, "color": "#f43f5e" },
+    { "type": "beam", "action": "slide", "width": 0.9, "color": "#eab308" },
+    { "type": "drone", "action": "dodge", "width": 0.6, "color": "#06b6d4" }
+  ],
+  "coins": {
+    "enabled": true,
+    "spawnRate": 0.9,
+    "points": 100
+  },
+  "audio": {
+    "theme": "cyber",
+    "bpm": 128
+  }
+}

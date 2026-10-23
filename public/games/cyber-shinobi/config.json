@@ -1,0 +1,26 @@
+{
+  "id": "cyber-shinobi",
+  "title": "Shinobi Path: Forest Trial",
+  "mode": "clips",
+  "version": "1.0.0",
+  "clips": {
+    "run": "procedural://clips_forest_run",
+    "jump": "procedural://clips_forest_jump",
+    "slide": "procedural://clips_forest_slide",
+    "hit": "procedural://clips_forest_hit",
+    "win": "procedural://clips_forest_win"
+  },
+  "defaultState": "run",
+  "actionDurationMs": {
+    "jump": 850,
+    "slide": 800,
+    "hit": 1100,
+    "win": 3000
+  },
+  "totalTrialTimeSec": 60,
+  "hazardIntervalSec": 4.5,
+  "audio": {
+    "theme": "ambient_nature",
+    "bpm": 110
+  }
+}

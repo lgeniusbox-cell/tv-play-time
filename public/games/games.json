@@ -1,0 +1,37 @@
+{
+  "version": "1.0.0",
+  "engineVersion": "2.4.0",
+  "games": [
+    {
+      "id": "neon-velocity",
+      "title": "Neon Velocity: Highway Run",
+      "mode": "speed",
+      "description": "Run on your mat! Foot step intensity modulates the video playback rate from 0.5x to 2.5x speed while dodging 3D perspective hurdles and collecting power rings.",
+      "packageUrl": "/games/neon-velocity/config.json",
+      "cover": "/games/neon-velocity/cover.svg",
+      "difficulty": "Medium",
+      "themeColor": "#06b6d4"
+    },
+    {
+      "id": "beat-sync-arena",
+      "title": "Beat Sync: Rhythm Arena",
+      "mode": "timeline",
+      "description": "Floor mat rhythm trainer: synchronize your lane switches, high jumps, and duck slides to the musical timeline within a strict 250ms window.",
+      "packageUrl": "/games/beat-sync-arena/config.json",
+      "timelineUrl": "/games/beat-sync-arena/timeline.json",
+      "cover": "/games/beat-sync-arena/cover.svg",
+      "difficulty": "Hard",
+      "themeColor": "#a855f7"
+    },
+    {
+      "id": "cyber-shinobi",
+      "title": "Shinobi Path: Forest Trial",
+      "mode": "clips",
+      "description": "State-driven video clip engine: your floor mat actions dynamically switch between running, leaping, sliding, and obstacle impact video clips.",
+      "packageUrl": "/games/cyber-shinobi/config.json",
+      "cover": "/games/cyber-shinobi/cover.svg",
+      "difficulty": "Easy",
+      "themeColor": "#10b981"
+    }
+  ]
+}

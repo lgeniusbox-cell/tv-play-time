@@ -1,192 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Phone → TV Body Tracker</title>
-<style>
-:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
---bg:#f4f5f8;--card:#fff;--text:#1b1d24;--muted:#667;--accent:#6c5ce7;--stage:#e9ecf5}
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14151b;--card:#1d1f28;--text:#eef0f6;--muted:#9aa0b4;--stage:#232634}}
-:root[data-theme="dark"]{color-scheme:dark;--bg:#14151b;--card:#1d1f28;--text:#eef0f6;--muted:#9aa0b4;--stage:#232634}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;max-width:900px;margin-inline:auto}
-h1{font-size:1.3rem;margin:0 0 6px}
-p,li{color:var(--muted);font-size:.9rem;line-height:1.45}
-.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px}
-button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:11px 16px;font-size:.95rem;cursor:pointer;margin:4px 6px 4px 0}
-button.ghost{background:transparent;color:var(--text);border:1px solid var(--muted)}
-button.big{padding:18px 22px;font-size:1.05rem}
-textarea{width:100%;height:84px;background:var(--stage);color:var(--text);border:1px solid var(--muted);border-radius:8px;padding:8px;font:12px monospace}
-.stage{position:relative;aspect-ratio:4/3;background:var(--stage);border-radius:12px;overflow:hidden}
-canvas{width:100%;height:100%;display:block}
-.hud{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-.pill{background:var(--card);border:1px solid var(--muted);border-radius:99px;padding:4px 12px;font-size:.85rem}
-.pill.flash{background:var(--accent);color:#fff;border-color:var(--accent)}
-video{width:120px;border-radius:8px;transform:scaleX(-1);background:#000}
-#status,#pstatus{font-size:.85rem;color:var(--muted)}
-[hidden]{display:none!important}
-</style>
-</head>
-<body>
-<h1>Phone → TV Body Tracker</h1>
-
-<section id="home">
-  <div class="card">
-    <p>Open this same page on two devices (any network). One is the <b>TV / Display</b> (shows the avatar), the other is the <b>Phone / Tracker</b> (uses its camera).</p>
-    <button class="big" id="bTV">📺 TV / Display</button>
-    <button class="big" id="bPhone">📱 Phone / Tracker</button>
-  </div>
-</section>
-
-<section id="tv" hidden>
-  <div class="card" id="pair">
-    <p>On the phone, open this page, tap <b>Phone / Tracker</b> and type this code:</p>
-    <div id="code" style="font-size:3rem;font-weight:700;letter-spacing:.3em;color:var(--accent)">----</div>
-    <span id="status">Waiting for phone…</span>
-  </div>
-  <div class="hud">
-    <span class="pill" id="sFps">FPS: –</span><span class="pill" id="sLat">Latency: –</span>
-    <span class="pill" id="sPunch">Punches: 0</span><span class="pill" id="sJump">Jumps: 0</span>
-    <button class="ghost" id="calib">Calibrate (stand still)</button>
-  </div>
-  <div class="stage"><canvas id="cv" width="800" height="600"></canvas></div>
-</section>
-
-<section id="phone" hidden>
-  <div class="card">
-    <p>Type the 4-digit code shown on the TV page:</p>
-    <input id="codeIn" inputmode="numeric" maxlength="4" placeholder="1234" style="font-size:2rem;width:7em;text-align:center;letter-spacing:.2em;padding:8px;border-radius:10px;border:1px solid var(--muted);background:var(--stage);color:var(--text)">
-    <br><button id="go">Start camera &amp; connect</button>
-    <p id="pstatus"></p>
-    <video id="video" playsinline muted></video>
-  </div>
-</section>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
-<script>
-const $=id=>document.getElementById(id);
-const show=id=>['home','tv','phone'].forEach(s=>$(s).hidden=s!==id);
-$('bTV').onclick=startTV;$('bPhone').onclick=()=>show('phone');
-
-/* ================= TV / DISPLAY ================= */
-let pose=null,asp=0.75,frames=0,rtt=0,tvRoom=null,lastPose=0;
-const cv=$('cv'),c=cv.getContext('2d'),W=800,H=600;
-let base=null,punches=0,jumps=0,armOut=[false,false],inAir=false;
-
-let tvConn=null;
-async function startTV(){
-  show('tv');
-  const code=String(Math.floor(1000+Math.random()*9000));
-  $('code').textContent=code;
-  const peer=new Peer('bodytv-'+code);
-  peer.on('error',e=>{$('status').textContent='Connection error: '+e.type;});
-  peer.on('connection',conn=>{
-    tvConn=conn;
-    conn.on('open',()=>{$('status').textContent='Phone connected ✓';});
-    conn.on('data',d=>{
-      if(d.pong!==undefined){rtt=(performance.now()-d.pong)/2;}
-      else if(d.p){pose=d.p;asp=d.a||asp;frames++;$('pair').hidden=true;detect();}
-    });
-    conn.on('close',()=>{$('pair').hidden=false;$('status').textContent='Phone disconnected';});
-  });
-  setInterval(()=>{if(tvConn&&tvConn.open)tvConn.send({ping:performance.now()});},1000);
-}
-setInterval(()=>{
-  $('sFps').textContent='FPS: '+frames;frames=0;
-  $('sLat').textContent='Latency: '+(rtt?rtt.toFixed(0)+' ms':'–');
-},1000);
-
-// pixel mapping, mirrored, keeps phone aspect ratio
-const PT=l=>({x:W/2+(0.5-l[0])*H*asp,y:l[1]*H,v:l[2]});
-const ok=l=>l&&l[2]>0.4;
-const hipY=()=>pose&&ok(pose[23])&&ok(pose[24])?(pose[23][1]+pose[24][1])/2:null;
-$('calib').onclick=()=>{const h=hipY();if(h!==null){base=h;$('calib').textContent='Calibrated ✓';}};
-function flash(id,t){const el=$(id);el.textContent=t;el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),250);}
-function detect(){
-  if(!pose)return;
-  const h=hipY();
-  if(base!==null&&h!==null){
-    if(!inAir&&h<base-0.05){inAir=true;jumps++;flash('sJump','Jumps: '+jumps+' ⬆');}
-    else if(inAir&&h>base-0.02){inAir=false;}
-  }
-  [[11,15],[12,16]].forEach(([s,w],i)=>{
-    if(!ok(pose[s])||!ok(pose[w])||!ok(pose[11])||!ok(pose[12]))return;
-    const S=PT(pose[s]),Wr=PT(pose[w]),a=PT(pose[11]),b=PT(pose[12]);
-    const ext=Math.hypot(S.x-Wr.x,S.y-Wr.y)/Math.max(20,Math.hypot(a.x-b.x,a.y-b.y));
-    if(!armOut[i]&&ext>1.9){armOut[i]=true;punches++;flash('sPunch','Punches: '+punches+' 👊');}
-    else if(armOut[i]&&ext<1.4)armOut[i]=false;
-  });
-}
-function line(pts,w,col){c.strokeStyle=col;c.lineWidth=w;c.lineCap='round';c.lineJoin='round';c.beginPath();pts.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();}
-function limb(ids,w,col){if(ids.every(i=>ok(pose[i])))line(ids.map(i=>PT(pose[i])),w,col);}
-function draw(){
-  requestAnimationFrame(draw);
-  c.clearRect(0,0,W,H);
-  if(base!==null){c.strokeStyle='rgba(120,130,200,.5)';c.setLineDash([8,8]);c.beginPath();c.moveTo(0,base*H);c.lineTo(W,base*H);c.stroke();c.setLineDash([]);}
-  if(!pose){c.fillStyle='#8a90a8';c.font='22px system-ui';c.textAlign='center';c.fillText('Waiting for phone…',W/2,H/2);return;}
-  const col='#6c5ce7',skin='#ffd2a8';
-  const s1=ok(pose[11])&&PT(pose[11]),s2=ok(pose[12])&&PT(pose[12]);
-  const shW=s1&&s2?Math.hypot(s1.x-s2.x,s1.y-s2.y):120,lw=Math.max(14,shW*0.2);
-  limb([23,25,27],lw,'#3d3499');limb([24,26,28],lw,'#3d3499');
-  if(s1&&s2){
-    const h1=ok(pose[23])?PT(pose[23]):{x:s1.x,y:s1.y+shW*1.3},h2=ok(pose[24])?PT(pose[24]):{x:s2.x,y:s2.y+shW*1.3};
-    c.fillStyle=c.strokeStyle=col;c.lineWidth=lw*0.8;c.lineJoin='round';
-    c.beginPath();c.moveTo(s1.x,s1.y);c.lineTo(s2.x,s2.y);c.lineTo(h2.x,h2.y);c.lineTo(h1.x,h1.y);c.closePath();c.fill();c.stroke();
-  }
-  limb([11,13,15],lw*0.75,'#9b8cff');limb([12,14,16],lw*0.75,'#9b8cff');
-  [15,16].forEach(i=>{if(ok(pose[i])){const p=PT(pose[i]);c.fillStyle=skin;c.beginPath();c.arc(p.x,p.y,lw*0.6,0,7);c.fill();}});
-  if(ok(pose[7])&&ok(pose[8])){
-    const a=PT(pose[7]),b=PT(pose[8]),cx=(a.x+b.x)/2,cy=(a.y+b.y)/2,ang=Math.atan2(b.y-a.y,b.x-a.x);
-    const r=Math.max(30,Math.hypot(b.x-a.x,b.y-a.y)*0.75);
-    c.save();c.translate(cx,cy);c.rotate(ang);
-    c.fillStyle=skin;c.beginPath();c.arc(0,0,r,0,7);c.fill();
-    c.fillStyle='#3d3499';c.beginPath();c.arc(0,-r*0.15,r*1.04,Math.PI,2*Math.PI);c.fill();
-    c.fillStyle='#fff';[-1,1].forEach(s=>{c.beginPath();c.ellipse(s*r*0.38,-r*0.05,r*0.2,r*0.24,0,0,7);c.fill();});
-    c.fillStyle='#222';[-1,1].forEach(s=>{c.beginPath();c.arc(s*r*0.38,-r*0.05,r*0.1,0,7);c.fill();});
-    c.strokeStyle='#7a2230';c.lineWidth=4;c.beginPath();c.arc(0,r*0.3,r*0.28,0.2,Math.PI-0.2);c.stroke();
-    c.restore();
-  }
-}
-draw();
-
-/* ================= PHONE / TRACKER ================= */
-$('go').onclick=async()=>{
-  const ps=$('pstatus'),code=$('codeIn').value.trim();
-  if(!/^\d{4}$/.test(code)){ps.textContent='Enter the 4-digit code from the TV.';return;}
-  const video=$('video');
-  try{
-    ps.textContent='Requesting camera…';
-    const st=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'},audio:false});
-    video.srcObject=st;await video.play();
-  }catch(e){ps.textContent='Camera error: '+(e.message||e.name)+' (camera needs https)';return;}
-  ps.textContent='Connecting to TV…';
-  const peer=new Peer();
-  peer.on('error',e=>{ps.textContent='Connection error: '+e.type+' (check the code)';});
-  const conn=await new Promise(res=>peer.on('open',()=>{
-    const c=peer.connect('bodytv-'+code,{reliable:false,serialization:'json'});
-    c.on('open',()=>res(c));
-  }));
-  conn.on('data',d=>{if(d.ping!==undefined)conn.send({pong:d.ping});});
-  conn.on('close',()=>{ps.textContent='Disconnected from TV.';});
-  ps.textContent='Loading tracking model…';
-  let last=0;
-  try{
-    const tracker=new Pose({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/'+f});
-    tracker.setOptions({modelComplexity:0,smoothLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
-    tracker.onResults(r=>{
-      const now=performance.now();
-      if(!r.poseLandmarks||!conn.open||now-last<33)return;last=now;
-      conn.send({a:+(video.videoWidth/video.videoHeight).toFixed(3),
-        p:r.poseLandmarks.map(l=>[+l.x.toFixed(3),+l.y.toFixed(3),+(l.visibility||0).toFixed(2)])});
-    });
-    await tracker.initialize();
-    ps.textContent='Connected ✓ — tracking and sending.';
-    const loop=async()=>{try{await tracker.send({image:video});}catch(e){}requestAnimationFrame(loop);};loop();
-  }catch(e){ps.textContent='Could not load model: '+(e.message||e);}
-};
-</script>
-</body>
+<!doctype html>
+<html lang="en" class="h-full bg-slate-950 text-white select-none">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>FloorMat Studio TV</title>
+    <meta name="description" content="Video-reactive game engine for body-controlled floor mat games on Android TV with Gamepad API input." />
+    <meta property="og:title" content="FloorMat Studio TV" />
+    <meta property="og:description" content="Video-reactive game engine for body-controlled floor mat games on Android TV with Gamepad API input." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#030712" />
+    <style>
+      /* Android TV WebView display optimizations */
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #030712;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      /* TV Focus outline styling */
+      :focus {
+        outline: none;
+      }
+      :focus-visible {
+        outline: 3px solid #38bdf8;
+        outline-offset: 3px;
+      }
+    </style>
+  </head>
+  <body class="overflow-hidden bg-slate-950">
+    <div id="root" class="h-full w-full"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

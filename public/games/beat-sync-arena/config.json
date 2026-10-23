@@ -1,0 +1,18 @@
+{
+  "id": "beat-sync-arena",
+  "title": "Beat Sync: Rhythm Arena",
+  "mode": "timeline",
+  "version": "1.0.0",
+  "videoUrl": "procedural://rhythm_grid",
+  "timelineUrl": "/games/beat-sync-arena/timeline.json",
+  "timingWindowMs": 250,
+  "perfectWindowMs": 90,
+  "lives": 4,
+  "bpm": 130,
+  "laneCount": 3,
+  "leadTimeMs": 2000,
+  "audio": {
+    "theme": "techno",
+    "bpm": 130
+  }
+}
